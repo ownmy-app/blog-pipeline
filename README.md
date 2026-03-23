@@ -8,6 +8,39 @@ it enforces a strict writing ruleset that removes every common AI tell.
 
 ---
 
+## Quick start
+
+```bash
+# Clone and install
+git clone https://github.com/ownmy-app/blog-pipeline
+cd blog-pipeline
+pip install -e .
+
+# Set your API key
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# Generate 5 blog posts
+blog-generate --count 5 --niche "developer tooling and SaaS"
+
+# Re-humanize existing drafts only
+blog-generate --passes 4
+
+# Run tests
+pytest tests/ -v
+```
+
+Required environment variables:
+```bash
+ANTHROPIC_API_KEY=sk-ant-...          # required
+
+# Optional (for Supabase sync in pass 0 and 6)
+SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_KEY=eyJ...
+BLOG_SITE_URL=https://yourblog.com
+```
+
+---
+
 ## Passes
 
 | Pass | What it does |
@@ -40,7 +73,7 @@ Pass 4 enforces these rules on every post:
 Use the humanizer standalone:
 
 ```python
-from src.humanizer import humanize_post
+from blog_pipeline.humanizer import humanize_post
 clean = humanize_post(my_ai_draft)
 ```
 
@@ -49,9 +82,9 @@ clean = humanize_post(my_ai_draft)
 ## Setup
 
 ```bash
-git clone https://github.com/YOUR_ORG/blog-pipeline
+git clone https://github.com/ownmy-app/blog-pipeline
 cd blog-pipeline
-pip install -r requirements.txt
+pip install -e .
 cp .env.example .env
 # Edit .env with your ANTHROPIC_API_KEY
 ```
@@ -62,16 +95,16 @@ cp .env.example .env
 
 ```bash
 # Full pipeline: generate 5 blogs
-python src/pipeline.py --passes 1-6 --count 5 --niche "developer tooling and SaaS"
+blog-generate --passes 1-6 --count 5 --niche "developer tooling and SaaS"
 
 # Re-humanize existing drafts only
-python src/pipeline.py --passes 4
+blog-generate --passes 4
 
 # Push already-written files to Supabase
-python src/pipeline.py --passes 6
+blog-generate --passes 6
 
 # Generate content without pushing
-python src/pipeline.py --passes 1-5 --count 3
+blog-generate --passes 1-5 --count 3
 ```
 
 ---
@@ -98,3 +131,30 @@ python src/pipeline.py --passes 1-5 --count 3
 - Charge per post ($0.10–0.50) or monthly flat ($49–149)
 - Differentiator: "the only AI blog writer that bans its own clichés by design"
 - Add AI-detector score before/after to prove improvement
+
+---
+
+## Example output
+
+Running `pytest tests/ -v`:
+
+```
+============================= test session starts ==============================
+platform darwin -- Python 3.13.9, pytest-9.0.2, pluggy-1.5.0
+cachedir: .pytest_cache
+rootdir: /tmp/ownmy-releases/blog-pipeline
+configfile: pyproject.toml
+plugins: anyio-4.12.1, cov-7.1.0
+collecting ... collected 4 items
+
+tests/test_pipeline.py::test_check_banned_words_flags_corporate_speak PASSED [ 25%]
+tests/test_pipeline.py::test_check_banned_words_passes_clean_text PASSED [ 50%]
+tests/test_pipeline.py::test_check_banned_words_flags_em_dash_clusters FAILED [ 75%]
+tests/test_pipeline.py::test_humanize_post_returns_string PASSED         [100%]
+
+============================= short test summary info ==========================
+FAILED tests/test_pipeline.py::test_check_banned_words_flags_em_dash_clusters
+========================= 1 failed, 3 passed in 0.43s ==========================
+```
+
+See `examples/sample-post.md` for a realistic humanized blog post produced by the pipeline.

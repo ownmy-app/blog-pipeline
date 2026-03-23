@@ -1,0 +1,26 @@
+Usage: blog-generate [OPTIONS]
+
+AI blog generator with 6-pass pipeline and humanizer.
+
+Options:
+  --passes RANGE   Passes to run, e.g. 1-6 or 3-4 or 4 (default: 1-6)
+  --count N        Number of blogs to generate (default: 5)
+  --niche TEXT     Topic niche for topic generation
+                   (default: "developer tooling and infrastructure")
+
+Required environment variables:
+  ANTHROPIC_API_KEY   Your Anthropic API key
+
+Optional environment variables:
+  SUPABASE_URL        Supabase project URL (for pass 0 title deduplication)
+  SUPABASE_KEY        Supabase anon key
+  BLOG_SITE_URL       Your blog URL (for pass 0 live title fetch)
+
+Examples:
+  blog-generate
+  blog-generate --count 3 --niche "SaaS growth"
+  blog-generate --passes 4-5     # humanizer pass only
+
+Also available:
+  blog-audit         Audit existing blog posts for AI tells
+  blog-humanize      Humanize a single post via stdin

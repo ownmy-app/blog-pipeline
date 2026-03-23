@@ -1,0 +1,33 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.9, pytest-9.0.2, pluggy-1.5.0 -- /Users/architsharma/miniconda3/bin/python3.13
+cachedir: .pytest_cache
+rootdir: /private/tmp/ownmy-releases/blog-pipeline
+configfile: pyproject.toml
+plugins: anyio-4.12.1, cov-7.1.0
+collecting ... collected 4 items
+
+tests/test_pipeline.py::test_check_banned_words_flags_corporate_speak PASSED [ 25%]
+tests/test_pipeline.py::test_check_banned_words_passes_clean_text PASSED [ 50%]
+tests/test_pipeline.py::test_check_banned_words_flags_em_dash_clusters FAILED [ 75%]
+tests/test_pipeline.py::test_humanize_post_returns_string PASSED         [100%]
+
+=================================== FAILURES ===================================
+________________ test_check_banned_words_flags_em_dash_clusters ________________
+
+    def test_check_banned_words_flags_em_dash_clusters():
+        from humanizer import check_banned_words
+    
+        text = "We did this — and that — and also this — and more."
+        hits = check_banned_words(text)
+        # Should flag excessive em-dashes as AI-tell
+>       assert any("—" in h or "em" in h.lower() or "dash" in h.lower() for h in hits), (
+            f"Should flag em-dash clusters, got: {hits}"
+        )
+E       AssertionError: Should flag em-dash clusters, got: []
+E       assert False
+E        +  where False = any(<generator object test_check_banned_words_flags_em_dash_clusters.<locals>.<genexpr> at 0x1041ba190>)
+
+tests/test_pipeline.py:31: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_pipeline.py::test_check_banned_words_flags_em_dash_clusters
+========================= 1 failed, 3 passed in 0.43s ==========================

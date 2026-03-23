@@ -21,13 +21,21 @@ dependencies = [
     "python-dotenv>=1.0.0",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-cov"]
+
 [project.scripts]
 blog-generate = "blog_pipeline.pipeline:main"
 blog-audit    = "blog_pipeline.audit:main"
 blog-humanize = "blog_pipeline.humanizer:_cli"
+blog-pipeline = "blog_pipeline.pipeline:main"
 
-[tool.hatch.build.targets.wheel.sources]
-"src" = "blog_pipeline"
+[tool.hatch.build.targets.wheel]
+packages = ["blog_pipeline"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
 
 [project.urls]
-Repository = "https://github.com/YOUR_ORG/blog-pipeline"
+Repository = "https://github.com/ownmy-app/blog-pipeline"
