@@ -104,7 +104,8 @@ def score_post(content: str) -> Dict[str, Any]:
 
 def unpublish_in_supabase(title: str) -> bool:
     """Set published=false for a blog by title in Supabase."""
-    import urllib.request, urllib.error
+    import urllib.request
+    import urllib.error
     from .config import SUPABASE_URL, SUPABASE_KEY, SUPABASE_TABLE, require_supabase
     require_supabase()
 
@@ -125,7 +126,6 @@ def unpublish_in_supabase(title: str) -> bool:
 
 
 def main():
-    import urllib.parse
 
     parser = argparse.ArgumentParser(description="Audit blog posts for quality")
     parser.add_argument("--dir", default="blogs", help="Blog directory (default: blogs)")

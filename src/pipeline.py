@@ -21,13 +21,10 @@ Environment: see .env.example
 
 import argparse
 import json
-import os
 import re
-import sys
 import time
 import uuid
 from datetime import datetime
-from pathlib import Path
 
 import anthropic
 
@@ -62,7 +59,8 @@ def pick_cover(blog_type: str, title: str) -> str:
 # ── Supabase helpers ──────────────────────────────────────────────────────────
 
 def _supa_request(method: str, path: str, body=None) -> dict:
-    import urllib.request, urllib.error
+    import urllib.request
+    import urllib.error
     url = f"{SUPABASE_URL}/rest/v1/{path}"
     data = json.dumps(body).encode() if body else None
     req = urllib.request.Request(url, data=data, method=method, headers={
@@ -189,7 +187,7 @@ def pass5_internal_links(blogs: list[dict], all_titles: list[str]) -> list[dict]
     def slugify(t):
         return re.sub(r"[^a-z0-9]+", "-", t.lower()).strip("-")
 
-    title_slugs = {t: f"/blog/{slugify(t)}" for t in all_titles}
+    _title_slugs = {t: f"/blog/{slugify(t)}" for t in all_titles}
 
     linked = []
     for blog in blogs:
@@ -269,7 +267,6 @@ def main():
 
     topics = []
     plans  = []
-    blogs  = []
 
     # Pass 1: topics
     if start_pass <= 1 <= end_pass:
