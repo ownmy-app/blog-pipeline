@@ -4,12 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "blog-pipeline"
-version = "0.1.2"
-description = "AI blog generator with 6-pass pipeline and built-in humanizer that removes AI writing tells."
+version = "0.2.0"
+description = "AI blog generator with 7-pass pipeline, multi-LLM support, pluggable backends, humanizer, SEO analysis, and AI detection."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
-keywords = ["blog", "ai", "content", "anthropic", "humanizer", "seo"]
+keywords = ["blog", "ai", "content", "anthropic", "openai", "humanizer", "seo", "cms"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -19,10 +19,18 @@ classifiers = [
 dependencies = [
     "anthropic>=0.30.0",
     "python-dotenv>=1.0.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-cov"]
+openai     = ["openai>=1.0.0"]
+litellm    = ["litellm>=1.0.0"]
+wordpress  = []
+notion     = []
+contentful = []
+postgres   = ["psycopg2-binary>=2.9"]
+all        = ["openai>=1.0.0", "litellm>=1.0.0", "psycopg2-binary>=2.9"]
+dev        = ["pytest>=8.0", "pytest-cov"]
 
 [project.scripts]
 blog-generate = "blog_pipeline.pipeline:main"
@@ -32,6 +40,9 @@ blog-pipeline = "blog_pipeline.pipeline:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/blog_pipeline"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/blog_pipeline/humanizer_rules.default.yml" = "blog_pipeline/humanizer_rules.default.yml"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

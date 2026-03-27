@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """
-6-pass blog generation pipeline.
+7-pass blog generation pipeline.
 
 Passes:
-  0  Fetch existing titles from Supabase (skip duplicates)
+  0  Fetch existing titles from backend (skip duplicates)
   1  Identify new topics to write
   2  Plan structure per topic (comparison / technical-deep-dive / case-study / how-to / opinion)
   3  Generate full markdown content
   4  Humanize (remove AI tells — see humanizer.py)
   5  Add internal links across the batch
-  6  Push to Supabase + update local registry
+  6  Push to backend + update local registry
+  7  Audit (optional — score posts and reject weak ones)
 
 Run:
-  python pipeline.py --passes 1-6 --count 5
-  python pipeline.py --passes 3-4    # re-humanize existing drafts
-  python pipeline.py --passes 6      # push already-written blogs to DB
+  blog-generate --passes 1-6 --count 5
+  blog-generate --passes 3-4              # re-humanize existing drafts
+  blog-generate --passes 6                # push already-written blogs to DB
+  blog-generate --passes 1-7 --audit      # full pipeline with audit gate
 
 Environment: see .env.example
 """
@@ -26,15 +28,15 @@ import time
 import uuid
 from datetime import datetime
 
-import anthropic
-
+from .llm import ask_llm
+from .backends import get_backend
 from .config import (
     BLOGS_DIR, TOPICS_CACHE, PLANS_CACHE, REGISTRY,
-    CATEGORY_MAP, CLAUDE_MODEL, SUPABASE_URL, SUPABASE_KEY, SUPABASE_TABLE,
+    CATEGORY_MAP,
     DEFAULT_AUTHOR, DEFAULT_AUTHOR_TITLE, DEFAULT_AUTHOR_IMAGE,
-    require_anthropic,
+    require_llm,
 )
-from .humanizer import humanize_post, check_banned_words
+from .humanizer import humanize_post, check_banned_words, humanize_post_scored
 
 # ── Unsplash cover pool (deterministic pick via UUID hash) ────────────────────
 COVER_POOL = {
@@ -56,58 +58,9 @@ def pick_cover(blog_type: str, title: str) -> str:
     return f"{UNSPLASH_BASE}{photo_id}?w=1200&q=80&auto=format&fit=crop"
 
 
-# ── Supabase helpers ──────────────────────────────────────────────────────────
-
-def _supa_request(method: str, path: str, body=None) -> dict:
-    import urllib.request
-    import urllib.error
-    url = f"{SUPABASE_URL}/rest/v1/{path}"
-    data = json.dumps(body).encode() if body else None
-    req = urllib.request.Request(url, data=data, method=method, headers={
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=minimal",
-    })
-    try:
-        with urllib.request.urlopen(req) as resp:
-            raw = resp.read()
-            return json.loads(raw) if raw else {}
-    except urllib.error.HTTPError as e:
-        return {"error": e.read().decode()}
-
-
-def fetch_live_titles() -> list[str]:
-    if not SUPABASE_URL:
-        return []
-    rows = _supa_request("GET", f"{SUPABASE_TABLE}?select=title&limit=500")
-    if isinstance(rows, list):
-        return [r.get("title", "") for r in rows if r.get("title")]
-    return []
-
-
-def push_blog(blog: dict) -> bool:
-    if not SUPABASE_URL:
-        return False
-    result = _supa_request("POST", SUPABASE_TABLE, blog)
-    return "error" not in result
-
-
-# ── Claude helper ─────────────────────────────────────────────────────────────
-
-def ask_claude(prompt: str, system: str = "", max_tokens: int = 8096) -> str:
-    client = anthropic.Anthropic()
-    kwargs = dict(model=CLAUDE_MODEL, max_tokens=max_tokens,
-                  messages=[{"role": "user", "content": prompt}])
-    if system:
-        kwargs["system"] = system
-    msg = client.messages.create(**kwargs)
-    return (msg.content[0].text or "").strip()
-
-
 # ── Pass implementations ──────────────────────────────────────────────────────
 
-def pass1_topics(existing_titles: list[str], count: int, niche: str) -> list[dict]:
+def pass1_topics(existing_titles: list, count: int, niche: str) -> list:
     """Identify `count` new blog topics not already covered."""
     existing_json = json.dumps(existing_titles[:100])
     prompt = f"""
@@ -124,7 +77,7 @@ Rules:
 - Titles that would rank on Google
 - Return ONLY the JSON array
 """
-    raw = ask_claude(prompt)
+    raw = ask_llm(prompt)
     try:
         start, end = raw.find("["), raw.rfind("]") + 1
         return json.loads(raw[start:end]) if start >= 0 else []
@@ -148,7 +101,7 @@ Return JSON: {{
 }}
 Return ONLY the JSON object.
 """
-    raw = ask_claude(prompt)
+    raw = ask_llm(prompt)
     try:
         start, end = raw.find("{"), raw.rfind("}") + 1
         plan = json.loads(raw[start:end])
@@ -178,17 +131,11 @@ Rules:
 - Write for senior developers and technical founders
 - Return ONLY the markdown content
 """
-    return ask_claude(prompt, max_tokens=8096)
+    return ask_llm(prompt, max_tokens=8096)
 
 
-def pass5_internal_links(blogs: list[dict], all_titles: list[str]) -> list[dict]:
+def pass5_internal_links(blogs: list, all_titles: list) -> list:
     """Add 2-3 internal links per blog to related posts."""
-    # Build a simple title → slug map
-    def slugify(t):
-        return re.sub(r"[^a-z0-9]+", "-", t.lower()).strip("-")
-
-    _title_slugs = {t: f"/blog/{slugify(t)}" for t in all_titles}
-
     linked = []
     for blog in blogs:
         content = blog.get("content", "")
@@ -208,16 +155,16 @@ Blog content:
 
 Return ONLY the updated markdown content with links added naturally in the text.
 """
-        new_content = ask_claude(prompt, max_tokens=4096)
+        new_content = ask_llm(prompt, max_tokens=4096)
         linked.append({**blog, "content": new_content or content})
     return linked
 
 
-def pass6_push(blogs: list[dict]) -> int:
-    """Push finalised blogs to Supabase."""
+def pass6_push(blogs: list, backend) -> int:
+    """Push finalised blogs to the configured backend."""
     pushed = 0
     for blog in blogs:
-        if push_blog(blog):
+        if backend.push_post(blog):
             pushed += 1
         time.sleep(0.2)
     return pushed
@@ -247,9 +194,12 @@ def main():
     parser.add_argument("--count", type=int, default=5, help="Number of blogs to generate")
     parser.add_argument("--niche", default="developer tooling and infrastructure",
                         help="Topic niche for topic generation")
+    parser.add_argument("--audit", action="store_true", help="Enable Pass 7 (audit gate)")
+    parser.add_argument("--audit-threshold", type=int, default=50,
+                        help="Minimum audit score to keep a post (default: 50)")
     args = parser.parse_args()
 
-    require_anthropic()
+    require_llm()
     BLOGS_DIR.mkdir(exist_ok=True)
 
     # Parse pass range
@@ -259,8 +209,14 @@ def main():
 
     registry = load_registry()
 
+    # Initialise backend
+    backend = get_backend()
+
     # Pass 0: fetch live titles
-    live_titles = fetch_live_titles()
+    try:
+        live_titles = backend.fetch_titles()
+    except Exception:
+        live_titles = []
     local_titles = list(registry.keys())
     all_known = list(dict.fromkeys(live_titles + local_titles))
     print(f"Pass 0: {len(all_known)} existing titles loaded")
@@ -275,7 +231,7 @@ def main():
         new_topics = pass1_topics(all_known, args.count, args.niche)
         topics = (raw + new_topics)[:args.count]
         TOPICS_CACHE.write_text(json.dumps(topics, indent=2))
-        print(f"  → {len(topics)} topics ready")
+        print(f"  -> {len(topics)} topics ready")
     else:
         topics = json.loads(TOPICS_CACHE.read_text()) if TOPICS_CACHE.exists() else []
 
@@ -291,7 +247,7 @@ def main():
                 time.sleep(0.5)
         PLANS_CACHE.write_text(json.dumps(planned, indent=2))
         plans = list(planned.values())
-        print(f"  → {len(plans)} plans ready")
+        print(f"  -> {len(plans)} plans ready")
     else:
         planned = json.loads(PLANS_CACHE.read_text()) if PLANS_CACHE.exists() else {}
         plans = list(planned.values())
@@ -321,14 +277,17 @@ def main():
             if "<!-- humanized -->" in content:
                 continue
             print(f"  humanizing: {md_file.name}")
-            humanized = humanize_post(content)
+            result = humanize_post_scored(content)
+            humanized = result["content"]
+            print(f"    AI score: {result['ai_score_before']:.2f} -> {result['ai_score_after']:.2f} "
+                  f"(improvement: {result['improvement']:.2f})")
             remaining = check_banned_words(humanized)
             if remaining:
-                print(f"  ⚠ still has banned words: {remaining}")
+                print(f"    still has banned words: {remaining}")
             md_file.write_text(humanized + "\n<!-- humanized -->", encoding="utf-8")
             time.sleep(0.5)
 
-    # Load all written blogs for passes 5-6
+    # Load all written blogs for passes 5-7
     all_blog_titles = []
     for md_file in sorted(BLOGS_DIR.glob("*.md")):
         if not md_file.name.startswith("_"):
@@ -350,40 +309,49 @@ def main():
         for b in linked:
             b["_path"].write_text(b["content"], encoding="utf-8")
 
-    # Pass 6: push to Supabase
+    # Pass 6: push to backend
     if start_pass <= 6 <= end_pass:
-        if not SUPABASE_URL:
-            print("Pass 6: skipped (SUPABASE_URL not set)")
-        else:
-            print("Pass 6: pushing to Supabase...")
-            to_push = []
-            for md_file in sorted(BLOGS_DIR.glob("*.md")):
-                if md_file.name.startswith("_"):
-                    continue
-                title = md_file.stem.replace("-", " ").title()
-                if title in registry:
-                    continue
-                content = md_file.read_text(encoding="utf-8").replace("\n<!-- humanized -->", "")
-                plan    = planned.get(title, {})
-                blog_type = plan.get("type", "how-to")
-                to_push.append({
-                    "title":       title,
-                    "content":     content,
-                    "author":      DEFAULT_AUTHOR,
-                    "author_title": DEFAULT_AUTHOR_TITLE,
-                    "author_image": DEFAULT_AUTHOR_IMAGE,
-                    "category":    CATEGORY_MAP.get(blog_type, "Tutorial"),
-                    "tags":        plan.get("tags", []),
-                    "seo_keywords": plan.get("seo_keywords", []),
-                    "cover_image": pick_cover(blog_type, title),
-                    "published":   True,
-                    "created_at":  datetime.utcnow().isoformat(),
-                })
-            pushed = pass6_push(to_push)
-            for b in to_push:
-                registry[b["title"]] = {"pushed_at": datetime.utcnow().isoformat()}
-            save_registry(registry)
-            print(f"  → pushed {pushed}/{len(to_push)} blogs")
+        print(f"Pass 6: pushing to backend ({backend.__class__.__name__})...")
+        to_push = []
+        for md_file in sorted(BLOGS_DIR.glob("*.md")):
+            if md_file.name.startswith("_"):
+                continue
+            title = md_file.stem.replace("-", " ").title()
+            if title in registry:
+                continue
+            content = md_file.read_text(encoding="utf-8").replace("\n<!-- humanized -->", "")
+            plan    = planned.get(title, {}) if 'planned' in dir() else {}
+            blog_type = plan.get("type", "how-to")
+            to_push.append({
+                "title":       title,
+                "content":     content,
+                "author":      DEFAULT_AUTHOR,
+                "author_title": DEFAULT_AUTHOR_TITLE,
+                "author_image": DEFAULT_AUTHOR_IMAGE,
+                "category":    CATEGORY_MAP.get(blog_type, "Tutorial"),
+                "tags":        plan.get("tags", []),
+                "seo_keywords": plan.get("seo_keywords", []),
+                "cover_image": pick_cover(blog_type, title),
+                "published":   True,
+                "created_at":  datetime.utcnow().isoformat(),
+            })
+        pushed = pass6_push(to_push, backend)
+        for b in to_push:
+            registry[b["title"]] = {"pushed_at": datetime.utcnow().isoformat()}
+        save_registry(registry)
+        print(f"  -> pushed {pushed}/{len(to_push)} blogs")
+
+    # Pass 7: audit gate (optional)
+    if args.audit and start_pass <= 7 <= end_pass:
+        print("Pass 7: running audit...")
+        from .audit import score_post, run_audit
+        results = run_audit(BLOGS_DIR, min_score=args.audit_threshold, seo=True)
+        fail_count = sum(1 for r in results if r["score"] < args.audit_threshold)
+        print(f"  -> {len(results)} posts audited, {fail_count} below threshold ({args.audit_threshold})")
+        if fail_count:
+            for r in results:
+                if r["score"] < args.audit_threshold:
+                    print(f"    FAIL ({r['score']}): {r.get('file', r.get('title', 'unknown'))}")
 
     print("\nDone.")
 

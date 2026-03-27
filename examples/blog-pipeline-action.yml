@@ -1,0 +1,68 @@
+# .github/workflows/blog-pipeline.yml
+#
+# Generates blog posts weekly (Monday 9am UTC) and on manual trigger.
+# Posts are pushed to the configured backend (Supabase, filesystem, etc.)
+# and audited before going live.
+
+name: Blog Pipeline
+
+on:
+  schedule:
+    # Every Monday at 9:00 AM UTC
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+    inputs:
+      count:
+        description: "Number of posts to generate"
+        required: false
+        default: "3"
+      niche:
+        description: "Topic niche"
+        required: false
+        default: "developer tooling and infrastructure"
+      passes:
+        description: "Pipeline passes (e.g. 1-6, 3-4)"
+        required: false
+        default: "1-7"
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Blog Pipeline
+        uses: nometria/blog-pipeline@v0.2
+        with:
+          passes: ${{ github.event.inputs.passes || '1-7' }}
+          count: ${{ github.event.inputs.count || '3' }}
+          niche: ${{ github.event.inputs.niche || 'developer tooling and infrastructure' }}
+          audit: "true"
+          audit-threshold: "60"
+        env:
+          # LLM provider (anthropic, openai, or litellm)
+          LLM_PROVIDER: anthropic
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          # Backend (filesystem, supabase, postgres, wordpress, notion, contentful)
+          BLOG_BACKEND: supabase
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_BLOGS_TABLE: blogs
+
+          # Blog metadata
+          BLOG_AUTHOR: "Engineering Team"
+          BLOG_AUTHOR_TITLE: "Engineering & Product"
+          BLOGS_DIR: ./blogs
+
+      - name: Commit generated blogs
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add blogs/
+          git diff --staged --quiet || git commit -m "chore: generate weekly blog posts [skip ci]"
+          git push

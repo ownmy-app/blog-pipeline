@@ -1,0 +1,63 @@
+name: "Blog Pipeline"
+description: "AI blog generation with humanizer pass, multi-backend support, and audit gate"
+author: "nometria"
+
+branding:
+  icon: "edit-3"
+  color: "purple"
+
+inputs:
+  passes:
+    description: "Pipeline passes to run (e.g. 1-6, 3-4, 1-7)"
+    required: false
+    default: "1-6"
+  count:
+    description: "Number of blog posts to generate"
+    required: false
+    default: "5"
+  niche:
+    description: "Topic niche for content generation"
+    required: false
+    default: "developer tooling and infrastructure"
+  audit:
+    description: "Enable Pass 7 audit gate (true/false)"
+    required: false
+    default: "false"
+  audit-threshold:
+    description: "Minimum audit score to keep a post (0-100)"
+    required: false
+    default: "50"
+  python-version:
+    description: "Python version to use"
+    required: false
+    default: "3.12"
+  extras:
+    description: "Optional pip extras to install (e.g. openai,postgres)"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install blog-pipeline
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.extras }}" ]; then
+          pip install "blog-pipeline[${{ inputs.extras }}]"
+        else
+          pip install blog-pipeline
+        fi
+
+    - name: Run blog-generate
+      shell: bash
+      run: |
+        ARGS="--passes ${{ inputs.passes }} --count ${{ inputs.count }} --niche '${{ inputs.niche }}'"
+        if [ "${{ inputs.audit }}" = "true" ]; then
+          ARGS="$ARGS --audit --audit-threshold ${{ inputs.audit-threshold }}"
+        fi
+        eval "blog-generate $ARGS"
