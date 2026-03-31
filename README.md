@@ -1,5 +1,9 @@
 # blog-pipeline
 
+<p align="center">
+  <b>Built by <a href="https://nometria.com">Nometria</a></b> — We take AI-built apps to production.
+</p>
+
 AI blog generator that doesn't sound like AI.
 
 7-pass pipeline with multi-LLM support (Anthropic, OpenAI, LiteLLM), pluggable
@@ -503,6 +507,28 @@ cd blog-pipeline
 pip install -e ".[dev]"
 pytest tests/ -v
 ```
+
+---
+
+---
+
+## Built by Nometria
+
+<a href="https://nometria.com">
+  <img src="https://img.shields.io/badge/nometria.com-Take%20AI%20apps%20to%20production-111827?style=for-the-badge&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJNMTIgMkw0IDdWMTdMMTIgMjJMMjAgMTdWN0wxMiAyWiIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIi8+PC9zdmc+" alt="Nometria" />
+</a>
+
+**blog-pipeline** is open source and free to use. It's one of the developer tools we built while helping teams ship AI-generated apps to production.
+
+Content marketing is how developer tools grow. We built this pipeline to generate our own blog posts, then open-sourced it because the humanizer pass genuinely produces better content than anything else we tried.
+
+**What Nometria does:**
+- :rocket: **Deploy AI apps to AWS** -- one click, production-ready
+- :lock: **Security & compliance** -- SOC 2, HIPAA-ready infrastructure
+- :chart_with_upwards_trend: **Scale reliably** -- handles real user traffic from day one
+- :wrench: **Full source code ownership** -- you own everything, no lock-in
+
+If you're building with AI tools (Base44, Lovable, Bolt, Replit, Cursor) and need to go to production -- **[nometria.com](https://nometria.com)**
 
 ---
 
